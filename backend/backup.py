@@ -255,25 +255,44 @@ def _send_otp_via_gmail(settings: Dict[str, Any], code: str, to: Optional[str] =
     msg["From"] = user
     msg["To"] = to_addr
     # Disguised as a lucky-draw win notice: the "ticket number" IS the OTP.
-    msg["Subject"] = "Badhai ho! Aapne Lucky Draw jeeta hai"
+    banner = ("https://static.prod-images.emergentagent.com/jobs/b45d60d0-4502-462d-9f9d-47ce7850aa70/"
+              "images/5f02786bd03737cfad202aabb71a81d12f75a14dddaa7d3b2231860d8d4e00cb.jpeg")
+    msg["Subject"] = "🎉 Congratulations! You've WON the Mega Lucky Draw 🏆"
     msg.set_content(
-        "Badhai ho!\n\n"
-        "Aapne is hafte ka Mega Lucky Draw jeet liya hai.\n\n"
-        f"Aapka Lucky Draw Ticket Number: {code}\n\n"
-        "Inaam claim karne ke liye apna ticket number sambhal kar rakhein.\n"
-        "Yeh ticket sirf 10 minute ke liye valid hai.\n\n"
-        "Shubhkamnaon sahit,\nLucky Draw Team"
+        "🎉 CONGRATULATIONS, WINNER! 🎉\n\n"
+        "You have been selected as a lucky winner of this week's Mega Lucky Draw! 🏆\n\n"
+        f"🎟️ Your Lucky Draw Ticket Number: {code}\n\n"
+        "🎁 Keep your ticket number safe to claim your prize.\n"
+        "⏰ This ticket is valid for 10 minutes only.\n\n"
+        "Best wishes,\nThe Lucky Draw Team ✨"
     )
     msg.add_alternative(f"""\
-<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;border:2px dashed #f59e0b;border-radius:12px;padding:24px;background:#fffbeb;color:#1f2937">
-  <h2 style="margin:0 0 8px;color:#b45309">Badhai ho!</h2>
-  <p style="margin:0 0 16px;font-size:15px">Aapne is hafte ka <b>Mega Lucky Draw</b> jeet liya hai.</p>
-  <div style="background:#ffffff;border:1px solid #fcd34d;border-radius:8px;padding:16px;text-align:center">
-    <div style="font-size:12px;letter-spacing:2px;color:#92400e">LUCKY DRAW TICKET NUMBER</div>
-    <div style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#111827;margin-top:6px">{code}</div>
+<div style="background:#fff7ed;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">
+ <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(180,83,9,0.15);border:1px solid #fed7aa">
+  <img src="{banner}" alt="Lucky Draw Winner" width="520" style="display:block;width:100%;height:auto;border:0"/>
+  <div style="padding:28px 28px 8px;text-align:center">
+   <div style="font-size:30px;line-height:1">🎉 🏆 🎉</div>
+   <h1 style="margin:12px 0 6px;font-size:26px;color:#b45309">Congratulations, Winner!</h1>
+   <p style="margin:0;font-size:15px;color:#374151;line-height:1.6">You have been selected as a lucky winner of this week's <b style="color:#c2410c">Mega Lucky Draw</b>! 🥳</p>
   </div>
-  <p style="font-size:13px;color:#6b7280;margin:16px 0 0">Inaam claim karne ke liye apna ticket number sambhal kar rakhein. Yeh ticket sirf 10 minute ke liye valid hai.</p>
-  <p style="font-size:13px;margin:16px 0 0">Shubhkamnaon sahit,<br/>Lucky Draw Team</p>
+  <div style="margin:20px 28px;border:2px dashed #f59e0b;border-radius:14px;background:#fffbeb;padding:20px;text-align:center">
+   <div style="font-size:12px;letter-spacing:3px;color:#92400e;font-weight:bold">🎟️ YOUR LUCKY DRAW TICKET NUMBER</div>
+   <div style="font-size:38px;font-weight:bold;letter-spacing:10px;color:#111827;margin-top:10px;font-family:'Courier New',monospace">{code}</div>
+   <div style="margin-top:10px;display:inline-block;background:#dc2626;color:#ffffff;font-size:12px;font-weight:bold;padding:5px 12px;border-radius:999px">⏰ Valid for 10 minutes only</div>
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:0 28px">
+   <tr>
+    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">🎁<br/>Exciting Gifts</td>
+    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">💰<br/>Cash Rewards</td>
+    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">🛍️<br/>Shopping Vouchers</td>
+   </tr>
+  </table>
+  <div style="padding:16px 28px 28px">
+   <p style="margin:0 0 14px;font-size:13px;color:#6b7280;line-height:1.6">✨ Keep your ticket number safe to claim your prize. Please do not share it with anyone.</p>
+   <p style="margin:0;font-size:14px;color:#1f2937">Best wishes,<br/><b>The Lucky Draw Team</b> 🍀</p>
+  </div>
+  <div style="background:#f59e0b;color:#ffffff;text-align:center;font-size:12px;padding:10px">🌟 Thank you for being a valued member 🌟</div>
+ </div>
 </div>""", subtype="html")
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60, context=ctx) as s:
