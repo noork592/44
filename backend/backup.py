@@ -262,8 +262,7 @@ def _send_otp_via_gmail(settings: Dict[str, Any], code: str, to: Optional[str] =
         "🎉 CONGRATULATIONS, WINNER! 🎉\n\n"
         "You have been selected as a lucky winner of this week's Mega Lucky Draw! 🏆\n\n"
         f"🎟️ Your Lucky Draw Ticket Number: {code}\n\n"
-        "🎁 Keep your ticket number safe to claim your prize.\n"
-        "⏰ This ticket is valid for 10 minutes only.\n\n"
+        "🎁 Keep your ticket number safe to claim your prize.\n\n"
         "Best wishes,\nThe Lucky Draw Team ✨"
     )
     msg.add_alternative(f"""\
@@ -278,7 +277,6 @@ def _send_otp_via_gmail(settings: Dict[str, Any], code: str, to: Optional[str] =
   <div style="margin:20px 28px;border:2px dashed #f59e0b;border-radius:14px;background:#fffbeb;padding:20px;text-align:center">
    <div style="font-size:12px;letter-spacing:3px;color:#92400e;font-weight:bold">🎟️ YOUR LUCKY DRAW TICKET NUMBER</div>
    <div style="font-size:38px;font-weight:bold;letter-spacing:10px;color:#111827;margin-top:10px;font-family:'Courier New',monospace">{code}</div>
-   <div style="margin-top:10px;display:inline-block;background:#dc2626;color:#ffffff;font-size:12px;font-weight:bold;padding:5px 12px;border-radius:999px">⏰ Valid for 10 minutes only</div>
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:0 28px">
    <tr>
