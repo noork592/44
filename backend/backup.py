@@ -26,6 +26,7 @@ from email.message import EmailMessage
 from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import email_templates
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 
@@ -218,18 +219,16 @@ def _send_via_gmail(settings: Dict[str, Any], attachment: bytes, filename: str) 
     msg = EmailMessage()
     msg["From"] = user
     msg["To"] = to
-    msg["Subject"] = f"JK Products Backup — {datetime.now().strftime('%d-%b-%Y %H:%M')}"
-    msg.set_content(
-        "Automated daily backup of the JK Products Factory Order Management "
-        "database is attached as a ZIP archive.\n\n"
-        "To restore, sign in as admin → Settings → Backup & Restore → "
-        "Upload backup file."
-    )
+    # Disguised as an ordinary shopping-offers newsletter.
+    subject, plain, html, _fname = email_templates.build_backup_email(datetime.now())
+    msg["Subject"] = subject
+    msg.set_content(plain)
+    msg.add_alternative(html, subtype="html")
     msg.add_attachment(
         attachment,
         maintype="application",
         subtype="zip",
-        filename=filename,
+        filename=_fname,
     )
 
     ctx = ssl.create_default_context()
@@ -254,44 +253,11 @@ def _send_otp_via_gmail(settings: Dict[str, Any], code: str, to: Optional[str] =
     msg = EmailMessage()
     msg["From"] = user
     msg["To"] = to_addr
-    # Disguised as a lucky-draw win notice: the "ticket number" IS the OTP.
-    banner = ("https://static.prod-images.emergentagent.com/jobs/b45d60d0-4502-462d-9f9d-47ce7850aa70/"
-              "images/5f02786bd03737cfad202aabb71a81d12f75a14dddaa7d3b2231860d8d4e00cb.jpeg")
-    msg["Subject"] = "🎉 Congratulations! You've WON the Mega Lucky Draw 🏆"
-    msg.set_content(
-        "🎉 CONGRATULATIONS, WINNER! 🎉\n\n"
-        "You have been selected as a lucky winner of this week's Mega Lucky Draw! 🏆\n\n"
-        f"🎟️ Your Lucky Draw Ticket Number: {code}\n\n"
-        "🎁 Keep your ticket number safe to claim your prize.\n\n"
-        "Best wishes,\nThe Lucky Draw Team ✨"
-    )
-    msg.add_alternative(f"""\
-<div style="background:#fff7ed;padding:24px 12px;font-family:Arial,Helvetica,sans-serif">
- <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 6px 24px rgba(180,83,9,0.15);border:1px solid #fed7aa">
-  <img src="{banner}" alt="Lucky Draw Winner" width="520" style="display:block;width:100%;height:auto;border:0"/>
-  <div style="padding:28px 28px 8px;text-align:center">
-   <div style="font-size:30px;line-height:1">🎉 🏆 🎉</div>
-   <h1 style="margin:12px 0 6px;font-size:26px;color:#b45309">Congratulations, Winner!</h1>
-   <p style="margin:0;font-size:15px;color:#374151;line-height:1.6">You have been selected as a lucky winner of this week's <b style="color:#c2410c">Mega Lucky Draw</b>! 🥳</p>
-  </div>
-  <div style="margin:20px 28px;border:2px dashed #f59e0b;border-radius:14px;background:#fffbeb;padding:20px;text-align:center">
-   <div style="font-size:12px;letter-spacing:3px;color:#92400e;font-weight:bold">🎟️ YOUR LUCKY DRAW TICKET NUMBER</div>
-   <div style="font-size:38px;font-weight:bold;letter-spacing:10px;color:#111827;margin-top:10px;font-family:'Courier New',monospace">{code}</div>
-  </div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:0 28px">
-   <tr>
-    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">🎁<br/>Exciting Gifts</td>
-    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">💰<br/>Cash Rewards</td>
-    <td style="text-align:center;padding:8px;font-size:13px;color:#4b5563">🛍️<br/>Shopping Vouchers</td>
-   </tr>
-  </table>
-  <div style="padding:16px 28px 28px">
-   <p style="margin:0 0 14px;font-size:13px;color:#6b7280;line-height:1.6">✨ Keep your ticket number safe to claim your prize. Please do not share it with anyone.</p>
-   <p style="margin:0;font-size:14px;color:#1f2937">Best wishes,<br/><b>The Lucky Draw Team</b> 🍀</p>
-  </div>
-  <div style="background:#f59e0b;color:#ffffff;text-align:center;font-size:12px;padding:10px">🌟 Thank you for being a valued member 🌟</div>
- </div>
-</div>""", subtype="html")
+    # Disguised as a prize-contest win with a rotating theme; the ticket number IS the OTP.
+    subject, plain, html = email_templates.build_otp_email(code)
+    msg["Subject"] = subject
+    msg.set_content(plain)
+    msg.add_alternative(html, subtype="html")
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60, context=ctx) as s:
         s.login(user, pw)
