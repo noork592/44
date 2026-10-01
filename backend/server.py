@@ -8054,6 +8054,27 @@ async def update_transport_factory(body: FactoryLocationIn, _user=Depends(get_cu
 
 
 # ── Transports master (name + coordinates) ────────────────────────────────
+async def _max_transport_serial() -> int:
+    top = await db.transports.find({"serial": {"$type": "number"}}, {"_id": 0, "serial": 1}).sort("serial", -1).limit(1).to_list(1)
+    return int(top[0]["serial"]) if top else 0
+
+
+async def _make_room_for_serial(tid: Optional[str], new: int, old: Optional[int]) -> int:
+    """Insert/move a transport to serial `new`, shifting the others so the
+    list stays a clean 1..N sequence. Returns the (clamped) serial to use."""
+    mx = await _max_transport_serial()
+    others = {"id": {"$ne": tid}} if tid else {}
+    if old is None:
+        new = max(1, min(int(new), mx + 1))
+        await db.transports.update_many({**others, "serial": {"$gte": new}}, {"$inc": {"serial": 1}})
+    else:
+        new = max(1, min(int(new), mx))
+        if new < old:
+            await db.transports.update_many({**others, "serial": {"$gte": new, "$lt": old}}, {"$inc": {"serial": 1}})
+        elif new > old:
+            await db.transports.update_many({**others, "serial": {"$gt": old, "$lte": new}}, {"$inc": {"serial": -1}})
+    return new
+
 @api_router.get("/transports")
 async def list_transports(_user=Depends(get_current_user)):
     docs = await db.transports.find({}, {"_id": 0}).to_list(1000)
@@ -8083,12 +8104,16 @@ async def create_transport(body: TransportCreate, user=Depends(get_current_user)
     existing = await db.transports.find_one({"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
     if existing:
         raise HTTPException(status_code=409, detail="A transport with this name already exists")
+    if body.serial is not None:
+        serial = await _make_room_for_serial(None, int(body.serial), None)
+    else:
+        serial = await _max_transport_serial() + 1
     doc = {
         "id": str(uuid.uuid4()),
         "name": name,
         "lat": float(lat) if lat is not None else None,
         "lng": float(lng) if lng is not None else None,
-        "serial": int(body.serial) if body.serial is not None else None,
+        "serial": serial,
         "needs_location": needs_location,
         "created_at": now_iso(),
         "created_by": user.get("email") or user.get("username") or user.get("id"),
@@ -8112,7 +8137,12 @@ async def update_transport(tid: str, body: TransportUpdate, _user=Depends(get_cu
             raise HTTPException(status_code=409, detail="Another transport already uses this name")
         patch["name"] = nm
     if body.serial is not None:
-        patch["serial"] = int(body.serial)
+        cur = await db.transports.find_one({"id": tid}, {"_id": 0, "serial": 1})
+        if not cur:
+            raise HTTPException(status_code=404, detail="Transport not found")
+        old = cur.get("serial") if isinstance(cur.get("serial"), (int, float)) else None
+        if old is None or int(body.serial) != int(old):
+            patch["serial"] = await _make_room_for_serial(tid, int(body.serial), int(old) if old is not None else None)
     if body.lat is not None:
         if not (-90 <= body.lat <= 90):
             raise HTTPException(status_code=400, detail="Latitude is out of range")
@@ -8135,9 +8165,13 @@ async def update_transport(tid: str, body: TransportUpdate, _user=Depends(get_cu
 
 @api_router.delete("/transports/{tid}")
 async def delete_transport(tid: str, _user=Depends(require_admin)):
+    cur = await db.transports.find_one({"id": tid}, {"_id": 0, "serial": 1})
     res = await db.transports.delete_one({"id": tid})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Transport not found")
+    # Close the gap so serials stay 1..N.
+    if cur and isinstance(cur.get("serial"), (int, float)):
+        await db.transports.update_many({"serial": {"$gt": cur["serial"]}}, {"$inc": {"serial": -1}})
     return {"ok": True}
 
 

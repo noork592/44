@@ -172,7 +172,7 @@ function ClickToPick({ enabled, onPick }) {
   return null;
 }
 
-const emptyDraft = { name: "", lat: "", lng: "" };
+const emptyDraft = { name: "", lat: "", lng: "", serial: "" };
 
 // Build a Google Maps directions URL that opens the app on mobile (or the
 // web version on desktop) and pre-fills factory → waypoints → last stop.
@@ -511,9 +511,24 @@ export default function TransportRoutes() {
     }
   };
 
+  // Re-fetch after add/edit/delete: inserting or moving a serial shifts others.
+  const refreshTransports = async () => {
+    try {
+      const r = await api.get("/transports");
+      setTransports((r.data || []).slice().sort(bySerial));
+    } catch { /* keep current list */ }
+  };
+  const nextSerial = transports.reduce(
+    (m, t) => (typeof t.serial === "number" && t.serial > m ? t.serial : m), 0) + 1;
+
   const addTransport = async () => {
     const name = draft.name.trim();
     if (!name) { toast.error("Enter a transport name."); return; }
+    const serialNum = String(draft.serial).trim() === "" ? nextSerial : Number(draft.serial);
+    if (!Number.isInteger(serialNum) || serialNum < 1) {
+      toast.error("Enter a valid serial number (1, 2, 3…).");
+      return;
+    }
     if (!isValidLatLng(draft.lat, draft.lng)) {
       toast.error("Enter valid coordinates or click on the map.");
       return;
@@ -521,12 +536,12 @@ export default function TransportRoutes() {
     try {
       setBusy((b) => ({ ...b, adding: true }));
       const r = await api.post("/transports", {
-        name, lat: Number(draft.lat), lng: Number(draft.lng),
+        name, lat: Number(draft.lat), lng: Number(draft.lng), serial: serialNum,
       });
-      setTransports((prev) => [...prev, r.data].sort(bySerial));
+      await refreshTransports();
       setDraft({ ...emptyDraft });
       setPickMode(false);
-      toast.success(`Added "${r.data.name}".`);
+      toast.success(`Added "${r.data.name}" at serial #${r.data.serial}.`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not add transport");
     } finally {
@@ -538,6 +553,7 @@ export default function TransportRoutes() {
     setEditingId(t.id);
     setEditingDraft({
       name: t.name,
+      serial: typeof t.serial === "number" ? String(t.serial) : "",
       lat: t.lat != null ? String(t.lat) : "",
       lng: t.lng != null ? String(t.lng) : "",
     });
@@ -550,12 +566,17 @@ export default function TransportRoutes() {
       toast.error("Enter valid coordinates.");
       return;
     }
+    const es = String(editingDraft.serial ?? "").trim();
+    if (es !== "" && (!Number.isInteger(Number(es)) || Number(es) < 1)) {
+      toast.error("Enter a valid serial number (1, 2, 3…).");
+      return;
+    }
     try {
-      const r = await api.patch(`/transports/${editingId}`, {
+      await api.patch(`/transports/${editingId}`, {
         name: nm, lat: Number(editingDraft.lat), lng: Number(editingDraft.lng),
+        ...(es !== "" ? { serial: Number(es) } : {}),
       });
-      setTransports((prev) => prev.map((t) => (t.id === editingId ? r.data : t))
-        .sort(bySerial));
+      await refreshTransports();
       toast.success("Updated.");
       cancelEdit();
     } catch (e) {
@@ -567,7 +588,7 @@ export default function TransportRoutes() {
     if (!window.confirm(`Delete transport "${t.name}"?`)) return;
     try {
       await api.delete(`/transports/${t.id}`);
-      setTransports((prev) => prev.filter((x) => x.id !== t.id));
+      await refreshTransports();
       setSelected((prev) => { const n = { ...prev }; delete n[t.id]; return n; });
       toast.success("Deleted");
     } catch (e) {
@@ -682,16 +703,35 @@ export default function TransportRoutes() {
               <Crosshair className="w-3.5 h-3.5" /> {pickMode ? "Picking… click map" : "Pick on map"}
             </button>
           </div>
-          <div>
-            <Label className="text-xs font-bold uppercase">Transport name</Label>
-            <Input
-              value={draft.name}
-              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-              placeholder="e.g. Sharma Transport"
-              className="h-10 rounded-sm mt-1"
-              data-testid="tr-name"
-            />
+          <div className="grid grid-cols-[1fr_120px] gap-3">
+            <div>
+              <Label className="text-xs font-bold uppercase">Transport name</Label>
+              <Input
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder="e.g. Sharma Transport"
+                className="h-10 rounded-sm mt-1"
+                data-testid="tr-name"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-bold uppercase">Serial no.</Label>
+              <Input
+                type="number"
+                min={1}
+                max={nextSerial}
+                value={draft.serial}
+                onChange={(e) => setDraft((d) => ({ ...d, serial: e.target.value }))}
+                placeholder={String(nextSerial)}
+                className="h-10 rounded-sm mt-1 font-mono-num"
+                data-testid="tr-serial"
+              />
+            </div>
           </div>
+          <p className="text-[11px] text-slate-500 mt-1" data-testid="tr-serial-hint">
+            Kis serial number par add karna hai? Khaali chhodne par <b>#{nextSerial}</b> (last) par add hoga.
+            Pehle se bhara number doge toh baaki transports ek number aage khisak jayenge.
+          </p>
           <div className="grid grid-cols-2 gap-3 mt-3">
             <div>
               <Label className="text-xs font-bold uppercase">Latitude</Label>
@@ -806,7 +846,16 @@ export default function TransportRoutes() {
                     />
                     <div className="flex-1 min-w-0">
                       {isEditing ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-[64px_1fr_1fr_1fr] gap-1.5">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={editingDraft.serial ?? ""}
+                            placeholder="S.No"
+                            onChange={(e) => setEditingDraft((d) => ({ ...d, serial: e.target.value }))}
+                            className="h-8 rounded-sm text-sm font-mono-num"
+                            data-testid="tr-edit-serial"
+                          />
                           <Input
                             value={editingDraft.name}
                             onChange={(e) => setEditingDraft((d) => ({ ...d, name: e.target.value }))}
