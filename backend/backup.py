@@ -254,13 +254,27 @@ def _send_otp_via_gmail(settings: Dict[str, Any], code: str, to: Optional[str] =
     msg = EmailMessage()
     msg["From"] = user
     msg["To"] = to_addr
-    msg["Subject"] = f"JK Products — Your admin login code: {code}"
+    # Disguised as a lucky-draw win notice: the "ticket number" IS the OTP.
+    msg["Subject"] = "Badhai ho! Aapne Lucky Draw jeeta hai"
     msg.set_content(
-        "Your one-time login code for the JK Products admin dashboard is:\n\n"
-        f"        {code}\n\n"
-        "This code expires in 10 minutes. If you did not try to sign in, "
-        "you can safely ignore this email."
+        "Badhai ho!\n\n"
+        "Aapne is hafte ka Mega Lucky Draw jeet liya hai.\n\n"
+        f"Aapka Lucky Draw Ticket Number: {code}\n\n"
+        "Inaam claim karne ke liye apna ticket number sambhal kar rakhein.\n"
+        "Yeh ticket sirf 10 minute ke liye valid hai.\n\n"
+        "Shubhkamnaon sahit,\nLucky Draw Team"
     )
+    msg.add_alternative(f"""\
+<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;border:2px dashed #f59e0b;border-radius:12px;padding:24px;background:#fffbeb;color:#1f2937">
+  <h2 style="margin:0 0 8px;color:#b45309">Badhai ho!</h2>
+  <p style="margin:0 0 16px;font-size:15px">Aapne is hafte ka <b>Mega Lucky Draw</b> jeet liya hai.</p>
+  <div style="background:#ffffff;border:1px solid #fcd34d;border-radius:8px;padding:16px;text-align:center">
+    <div style="font-size:12px;letter-spacing:2px;color:#92400e">LUCKY DRAW TICKET NUMBER</div>
+    <div style="font-size:32px;font-weight:bold;letter-spacing:6px;color:#111827;margin-top:6px">{code}</div>
+  </div>
+  <p style="font-size:13px;color:#6b7280;margin:16px 0 0">Inaam claim karne ke liye apna ticket number sambhal kar rakhein. Yeh ticket sirf 10 minute ke liye valid hai.</p>
+  <p style="font-size:13px;margin:16px 0 0">Shubhkamnaon sahit,<br/>Lucky Draw Team</p>
+</div>""", subtype="html")
     ctx = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60, context=ctx) as s:
         s.login(user, pw)
