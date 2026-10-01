@@ -80,9 +80,9 @@ export default function AdminUsers() {
   ];
   // Resolve a user's grant for one module: { edit, delete }. Admins → both.
   const grantFor = (u, base) => {
-    if (u.role === "admin") return { edit: true, delete: true, admin: true };
-    const perms = Array.isArray(u.permissions) ? u.permissions : [];
-    return { edit: perms.includes(`edit:${base}`), delete: perms.includes(`delete:${base}`) };
+    if (u.role === "admin") return { add: true, edit: true, delete: true, admin: true };
+    const perms = Array.isArray(u.permissions) ? u.permissions : DEFAULT_USER_PERMISSIONS;
+    return { add: perms.includes(`add:${base}`), edit: perms.includes(`edit:${base}`), delete: perms.includes(`delete:${base}`) };
   };
 
   // Unread access-change count = entries newer than the last time the admin
@@ -439,7 +439,7 @@ export default function AdminUsers() {
 
       {/* Manage Access Dialog */}
       <Dialog open={!!permTarget} onOpenChange={(o) => { if (!o) setPermTarget(null); }}>
-        <DialogContent className="rounded-sm max-w-xl" data-testid="manage-access-dialog">
+        <DialogContent className="rounded-sm max-w-3xl" data-testid="manage-access-dialog">
           <DialogHeader>
             <DialogTitle className="font-heading flex items-center gap-2">
               <Lock className="w-4 h-4 text-[#E65100]" />
@@ -497,7 +497,7 @@ export default function AdminUsers() {
             <div className="border border-slate-200 rounded-sm" data-testid="action-perms-section">
               <div className="px-3 py-2 bg-orange-50 border-b border-orange-200 flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-[11px] uppercase tracking-wider font-bold text-orange-900 inline-flex items-center gap-1.5">
-                  <Lock className="w-3 h-3" /> Edit / Delete permissions
+                  <Lock className="w-3 h-3" /> Add / Edit / Delete permissions
                 </div>
                 <div className="flex items-center gap-2">
                   <Button type="button" size="sm" variant="outline"
@@ -515,9 +515,9 @@ export default function AdminUsers() {
                 </div>
               </div>
               <div className="px-3 py-2 text-[11px] text-slate-500">
-                Grant Edit and Delete separately per module. When OFF for both, the user can only view.
+                Grant Add, Edit and Delete separately per module. When all three are OFF, the user can only view.
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 pt-0">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 p-2 pt-0">
                 {ACTION_PERMISSION_KEYS.map((key) => (
                   <label key={key} className="flex items-center gap-2 px-2 py-2 rounded-sm border border-slate-100 hover:bg-orange-50 cursor-pointer"
                          data-testid={`action-row-${key}`}>
@@ -600,7 +600,7 @@ export default function AdminUsers() {
               <ClipboardList className="w-4 h-4 text-[#E65100]" /> Access report
             </DialogTitle>
             <DialogDescription>
-              Exactly which modules each user can Edit (E) or Delete (D). Admins have full access to everything.
+              Exactly which modules each user can Add (A), Edit (E) or Delete (D). Admins have full access to everything.
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-auto max-h-[65vh] border border-slate-200 rounded-sm">
@@ -609,7 +609,7 @@ export default function AdminUsers() {
                 <tr>
                   <th className="text-left px-3 py-2 font-bold text-slate-700 sticky left-0 bg-slate-50 min-w-[140px]">User</th>
                   {REPORT_MODULES.map(([base, title]) => (
-                    <th key={base} className="px-2 py-2 text-center text-[10px] uppercase tracking-wider font-bold text-slate-600 min-w-[92px] border-l border-slate-200">
+                    <th key={base} className="px-2 py-2 text-center text-[10px] uppercase tracking-wider font-bold text-slate-600 min-w-[110px] border-l border-slate-200">
                       {title}
                     </th>
                   ))}
@@ -626,10 +626,10 @@ export default function AdminUsers() {
                       const g = grantFor(u, base);
                       const Chip = ({ on, letter, tone }) => (
                         <span
-                          title={`${letter === "E" ? "Edit" : "Delete"} ${on ? "allowed" : "blocked"}`}
+                          title={`${letter === "A" ? "Add" : letter === "E" ? "Edit" : "Delete"} ${on ? "allowed" : "blocked"}`}
                           className={`inline-flex items-center justify-center w-6 h-6 rounded-sm text-[11px] font-extrabold border ${
                             on
-                              ? (tone === "del" ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700")
+                              ? (tone === "del" ? "bg-rose-50 border-rose-200 text-rose-700" : tone === "add" ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-emerald-50 border-emerald-200 text-emerald-700")
                               : "bg-slate-50 border-slate-200 text-slate-300"
                           }`}
                         >
@@ -639,6 +639,7 @@ export default function AdminUsers() {
                       return (
                         <td key={base} className="px-2 py-2 text-center border-l border-slate-100" data-testid={`report-cell-${u.id}-${base}`}>
                           <div className="inline-flex items-center gap-1">
+                            <Chip on={g.add} letter="A" tone="add" />
                             <Chip on={g.edit} letter="E" tone="edit" />
                             <Chip on={g.delete} letter="D" tone="del" />
                           </div>

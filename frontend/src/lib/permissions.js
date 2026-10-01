@@ -15,6 +15,7 @@ export const DEFAULT_USER_PERMISSIONS = [
   "dashboard", "orders", "dispatch", "dispatchLedger", "dailyReport",
   "estimates",
   "customers", "products",
+  "add:orders", "add:dispatch", "add:customerLedger",
 ];
 
 // Friendly labels for the Manage-access dialog.
@@ -39,41 +40,51 @@ export const PERMISSION_LABELS = {  dashboard: "Dashboard",
 };
 
 // ---- Fine-grained edit / delete action permissions ----
-// SEPARATE toggles for edit vs delete, one pair per module. Stored in the same
+// SEPARATE toggles for add / edit / delete, one triple per module. Stored in the same
 // `permissions` array as nav keys; the distinct `edit:` / `delete:` prefixes
 // keep them from clashing. Must stay in sync with backend ACTION_PERMISSION_KEYS.
 export const ACTION_PERMISSION_KEYS = [
-  "edit:customers", "delete:customers",
-  "edit:products", "delete:products",
-  "edit:rawMaterials", "delete:rawMaterials",
-  "edit:suppliers", "delete:suppliers",
-  "edit:vendorLedger", "delete:vendorLedger",
-  "edit:customerLedger", "delete:customerLedger",
-  "edit:orders", "delete:orders",
-  "edit:dispatch", "delete:dispatch",
-  "edit:priceLists", "delete:priceLists",
-  "edit:vendorPriceLists", "delete:vendorPriceLists",
+  "add:customers", "edit:customers", "delete:customers",
+  "add:products", "edit:products", "delete:products",
+  "add:rawMaterials", "edit:rawMaterials", "delete:rawMaterials",
+  "add:suppliers", "edit:suppliers", "delete:suppliers",
+  "add:vendorLedger", "edit:vendorLedger", "delete:vendorLedger",
+  "add:customerLedger", "edit:customerLedger", "delete:customerLedger",
+  "add:orders", "edit:orders", "delete:orders",
+  "add:dispatch", "edit:dispatch", "delete:dispatch",
+  "add:priceLists", "edit:priceLists", "delete:priceLists",
+  "add:vendorPriceLists", "edit:vendorPriceLists", "delete:vendorPriceLists",
 ];
 
 export const ACTION_PERMISSION_LABELS = {
+  "add:customers": "Add customer list",
   "edit:customers": "Edit customer list",
   "delete:customers": "Delete customer list",
+  "add:products": "Add products list",
   "edit:products": "Edit products list",
   "delete:products": "Delete products list",
+  "add:rawMaterials": "Add raw material",
   "edit:rawMaterials": "Edit raw material",
   "delete:rawMaterials": "Delete raw material",
+  "add:suppliers": "Add vendor list",
   "edit:suppliers": "Edit vendor list",
   "delete:suppliers": "Delete vendor list",
+  "add:vendorLedger": "Add vendor ledger",
   "edit:vendorLedger": "Edit vendor ledger",
   "delete:vendorLedger": "Delete vendor ledger",
+  "add:customerLedger": "Add customer ledger",
   "edit:customerLedger": "Edit customer ledger",
   "delete:customerLedger": "Delete customer ledger",
+  "add:orders": "Add orders",
   "edit:orders": "Edit all orders",
   "delete:orders": "Delete all orders",
+  "add:dispatch": "Add dispatch report",
   "edit:dispatch": "Edit dispatch report",
   "delete:dispatch": "Delete dispatch report",
+  "add:priceLists": "Add customer price list",
   "edit:priceLists": "Edit customer price list",
   "delete:priceLists": "Delete customer price list",
+  "add:vendorPriceLists": "Add vendor price list",
   "edit:vendorPriceLists": "Edit vendor price list",
   "delete:vendorPriceLists": "Delete vendor price list",
 };
