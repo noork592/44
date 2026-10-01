@@ -51,3 +51,4 @@ Full-stack Factory Order Management ERP (React + FastAPI + MongoDB): user roles,
 - 2026-10-01: Sidebar "Customer Ledger" + "Vendor Ledger" merged into one "Ledger" item (nav-ledger). `components/LedgerTabs.jsx` wraps /dispatch-ledger and /admin/suppliers with Customer/Vendor tabs; routes unchanged.
 - 2026-10-01: Imported 'Transport Details.xls' (backend/data/uploads): 29 existing transports given Excel serials (names kept, customers reference names), 17 new added with needs_location=True. SHIV FREIGHT & SADHU left without serial.
 - 2026-10-01: Transport serial on add/edit. Add form has "Serial no." (blank = last). Backend `_make_room_for_serial` shifts others on insert/move; delete closes the gap (serials stay 1..N). "anhad" transport exists with lat/lng 0,0 and no serial.
+- 2026-10-01: Drag-to-reorder transports (@dnd-kit, touch supported) in TransportRoutes list; grip handle per row; disabled while searching/editing; PATCH serial.

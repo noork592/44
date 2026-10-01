@@ -17,6 +17,44 @@ import {
 } from "lucide-react";
 import DatePicker from "@/components/DatePicker";
 import { todayIso } from "@/lib/dates";
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
+
+// Drag-to-reorder row wrapper. Only the grip handle starts a drag so the
+// checkbox / edit / delete buttons keep working normally.
+function SortableTransportRow({ id, disabled, className, children, ...rest }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : undefined,
+    position: "relative",
+  };
+  return (
+    <div ref={setNodeRef} style={style}
+         className={`${className} ${isDragging ? "shadow-lg ring-2 ring-[#E65100] opacity-95" : ""}`} {...rest}>
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        disabled={disabled}
+        aria-label="Drag to reorder"
+        title={disabled ? "Search clear karo to reorder" : "Drag karke serial number badlo"}
+        className={`mt-0.5 -ml-1 p-0.5 rounded-sm touch-none ${disabled ? "text-slate-300 cursor-not-allowed" : "text-slate-400 hover:text-[#E65100] hover:bg-orange-50 cursor-grab active:cursor-grabbing"}`}
+        data-testid={`tr-drag-${id}`}
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      {children}
+    </div>
+  );
+}
 
 // Marker icon default asset shim (react-leaflet's defaults 404 without this).
 delete L.Icon.Default.prototype._getIconUrl;
@@ -518,6 +556,35 @@ export default function TransportRoutes() {
       setTransports((r.data || []).slice().sort(bySerial));
     } catch { /* keep current list */ }
   };
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const onTransportDragEnd = async ({ active, over }) => {
+    if (!over || active.id === over.id) return;
+    const moved = transports.find((t) => t.id === active.id);
+    const target = transports.find((t) => t.id === over.id);
+    if (!moved || !target) return;
+    const maxSerial = transports.reduce((m, t) => (typeof t.serial === "number" && t.serial > m ? t.serial : m), 0);
+    const newSerial = typeof target.serial === "number" ? target.serial : maxSerial + (typeof moved.serial === "number" ? 0 : 1);
+    // Optimistic: reorder locally and renumber the serialised block 1..N.
+    const oldIdx = transports.findIndex((t) => t.id === active.id);
+    const newIdx = transports.findIndex((t) => t.id === over.id);
+    const prevList = transports;
+    const reordered = arrayMove(transports, oldIdx, newIdx);
+    const serialCount = maxSerial + (typeof moved.serial === "number" ? 0 : 1);
+    setTransports(reordered.map((t, i) => (i < serialCount ? { ...t, serial: i + 1 } : t)));
+    try {
+      const r = await api.patch(`/transports/${moved.id}`, { name: moved.name, serial: newSerial });
+      toast.success(`"${moved.name}" ab serial #${r.data.serial} par hai.`);
+    } catch (e) {
+      setTransports(prevList);
+      toast.error(e?.response?.data?.detail || "Could not reorder");
+    } finally {
+      refreshTransports();
+    }
+  };
   const nextSerial = transports.reduce(
     (m, t) => (typeof t.serial === "number" && t.serial > m ? t.serial : m), 0) + 1;
 
@@ -822,6 +889,12 @@ export default function TransportRoutes() {
                   </button>
                 )}
               </div>
+              <p className="text-[11px] text-slate-500 mb-1.5 flex items-center gap-1" data-testid="tr-drag-hint">
+                <GripVertical className="w-3 h-3" />
+                {searchQ.trim() ? "Reorder karne ke liye search clear karo." : "Upar-neeche drag karke serial number badlo."}
+              </p>
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={onTransportDragEnd}>
+              <SortableContext items={filteredTransports.map((t) => t.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-1.5 max-h-80 overflow-auto pr-1" data-testid="tr-list">
                 {filteredTransports.length === 0 ? (
                   <div className="text-sm text-slate-400 text-center py-6" data-testid="tr-search-empty">
@@ -831,8 +904,10 @@ export default function TransportRoutes() {
                 const isEditing = editingId === t.id;
                 const noLoc = !!t.needs_location || t.lat == null || t.lng == null;
                 return (
-                  <div
+                  <SortableTransportRow
                     key={t.id}
+                    id={t.id}
+                    disabled={!!searchQ.trim() || !!editingId}
                     className={`flex items-start gap-2 border rounded-sm px-2.5 py-2 ${noLoc ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"}`}
                     data-testid={`tr-row-${t.id}`}
                     data-needs-location={noLoc ? "yes" : "no"}
@@ -918,10 +993,12 @@ export default function TransportRoutes() {
                         </>
                       )}
                     </div>
-                  </div>
+                  </SortableTransportRow>
                 );
               })}
               </div>
+              </SortableContext>
+              </DndContext>
             </>
           )}
 
