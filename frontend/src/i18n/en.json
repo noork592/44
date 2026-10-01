@@ -47,6 +47,7 @@
     "adminUsers": "Users",
     "adminSettings": "Workflow Rules",
     "loginAudit": "Login Audit",
+    "ledger": "Ledger",
     "dispatchLedger": "Customer Ledger",
     "vendorLedger": "Vendor Ledger",
     "settingsGroup": "Settings",

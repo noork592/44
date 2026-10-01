@@ -20,9 +20,10 @@ const NAV = [
   { to: "/orders", key: "orders", icon: ClipboardList, testid: "nav-orders" },
   { to: "/dispatch", key: "dispatch", icon: PackageCheck, testid: "nav-dispatch" },
   { to: "/purchase-center", key: "purchaseCenter", icon: FileText, testid: "nav-purchase-center", adminOnly: true },
-  { to: "/dispatch-ledger", key: "dispatchLedger", icon: ScrollText, testid: "nav-dispatch-ledger" },
+  // Combined Ledger entry: Customer + Vendor ledgers (tabs inside the page).
+  { to: "/dispatch-ledger", key: "ledger", icon: ScrollText, testid: "nav-ledger", showKeys: ["dispatchLedger", "vendorLedger"],
+    activePaths: ["/dispatch-ledger", "/admin/suppliers"] },
   { to: "/estimates", key: "estimates", icon: Calculator, testid: "nav-estimates" },
-  { to: "/admin/suppliers", key: "vendorLedger", icon: Building2, testid: "nav-vendor-ledger", adminOnly: true },
   { to: "/reports/daily", key: "dailyReport", icon: FileBarChart2, testid: "nav-daily-report" },
 ];
 
@@ -62,18 +63,19 @@ export default function Layout() {
   const visibleSettings = SETTINGS_NAV.filter((n) => can(n.key));
   const visibleNav = NAV.filter((n) => (n.showKeys ? n.showKeys.some((k) => can(k)) : can(n.key)));
 
-  const renderNavLink = ({ to, key, icon: Icon, end, testid }, opts = {}) => (
+  const renderNavLink = ({ to, key, icon: Icon, end, testid, activePaths }, opts = {}) => (
     <NavLink
       key={to}
-      to={to}
+      to={key === "ledger" && !can("dispatchLedger") ? "/admin/suppliers" : to}
       end={end}
       onClick={() => setOpen(false)}
       data-testid={testid}
-      className={({ isActive }) =>
-        `flex items-center gap-3 px-3 h-11 rounded-sm transition-colors text-sm ${
+      className={({ isActive: routeActive }) => {
+        const isActive = routeActive || (activePaths || []).some((p) => location.pathname.startsWith(p));
+        return `flex items-center gap-3 px-3 h-11 rounded-sm transition-colors text-sm ${
           isActive ? "bg-[#E65100] text-white font-bold" : "text-slate-300 hover:bg-slate-800 hover:text-white"
-        } ${opts.nested ? "pl-9" : ""}`
-      }
+        } ${opts.nested ? "pl-9" : ""}`;
+      }}
     >
       <Icon className="w-4 h-4" />
       <span>{t(`nav.${key}`)}</span>

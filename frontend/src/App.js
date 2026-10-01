@@ -23,6 +23,7 @@ import PurchaseCenter from "@/pages/PurchaseCenter";
 import RawMaterials from "@/pages/RawMaterials";
 import VendorPriceLists from "@/pages/VendorPriceLists";
 import VendorLedger from "@/pages/VendorLedger";
+import LedgerTabs from "@/components/LedgerTabs";
 import InstallPrompt from "@/components/InstallPrompt";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import "@/App.css";
@@ -108,7 +109,7 @@ export default function App() {
               <Route path="customers" element={<Protected permKey="customers"><Customers /></Protected>} />
               <Route path="dispatch" element={<Protected permKey="dispatch"><Dispatch /></Protected>} />
               <Route path="purchase-center" element={<Protected adminOnly permKey="purchaseCenter"><PurchaseCenter /></Protected>} />
-              <Route path="dispatch-ledger" element={<Protected permKey="dispatchLedger"><DispatchLedger /></Protected>} />
+              <Route path="dispatch-ledger" element={<Protected permKey="dispatchLedger"><LedgerTabs><DispatchLedger /></LedgerTabs></Protected>} />
               <Route path="products" element={<Protected permKey="products"><Products /></Protected>} />
               <Route path="admin/raw-materials" element={<Protected adminOnly permKey="rawMaterials"><RawMaterials /></Protected>} />
               <Route path="reports/daily" element={<Protected permKey="dailyReport"><DailyReport /></Protected>} />
@@ -118,7 +119,7 @@ export default function App() {
               <Route path="admin/vendor-price-lists" element={<Protected adminOnly permKey="vendorPriceLists"><VendorPriceLists /></Protected>} />
               <Route path="admin/settings" element={<Protected adminOnly permKey="adminSettings"><AdminSettings /></Protected>} />
               <Route path="admin/login-attestations" element={<Protected adminOnly permKey="loginAudit"><LoginAttestations /></Protected>} />
-              <Route path="admin/suppliers" element={<Protected adminOnly permKey="vendorLedger"><VendorLedger /></Protected>} />
+              <Route path="admin/suppliers" element={<Protected adminOnly permKey="vendorLedger"><LedgerTabs><VendorLedger /></LedgerTabs></Protected>} />
               <Route path="admin/vendors" element={<Protected adminOnly permKey="suppliers"><Suppliers /></Protected>} />
               <Route path="admin/suppliers/:id" element={<Protected adminOnly permKey="vendorLedger"><SupplierLedger /></Protected>} />
               <Route path="admin/dispatch-ledger" element={<Navigate to="/dispatch-ledger" replace />} />
