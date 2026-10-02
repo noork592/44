@@ -1,0 +1,207 @@
+================================================================================
+PERMISSION SYSTEM TEST - 30 Action Keys (10 Modules × 3 Actions)
+================================================================================
+
+1. Logging in...
+  ✓ zzqa_admin logged in
+  ✓ zzqa_user logged in
+
+2. Testing GET /api/permissions/catalog...
+  ✓ Catalog returned 30 action keys
+  ✓ All 30 action keys present
+
+3. Testing PATCH /api/users/{uid}/permissions with all 30 keys...
+  ✓ Accepted all 30 action keys + nav keys
+
+4. Testing PATCH /api/users/{uid}/permissions with invalid key...
+  ✓ Correctly rejected invalid key with 400
+
+5. Creating test records for edit/delete operations...
+  ✓ Created customer: 85b4d940-ab3f-41df-957e-a5b9db174654
+  ✓ Created product: None
+  ✓ Created raw material: 79fce11c-ac43-484f-8ded-aaf37c77c8c2
+  ✓ Created supplier: 53c301a1-b9cf-4a50-8082-3c6196f3d3d3
+  ✓ Created price list: 2d83a8f4-e732-4607-886c-a8467e9289cd
+  ✓ Created vendor price list: None
+
+6. Testing all 30 permission keys...
+================================================================================
+
+--- CUSTOMERS ---
+  add:customers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  edit:customers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 400 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  delete:customers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- PRODUCTS ---
+  add:products: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 422 (not 403, allowed)
+    ✓ Admin: 422 (allowed)
+  edit:products: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 400 (not 403, allowed)
+    ✓ Admin: 400 (allowed)
+  delete:products: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- RAW MATERIALS ---
+  add:rawMaterials: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  edit:rawMaterials: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  delete:rawMaterials: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- SUPPLIERS ---
+  add:suppliers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  edit:suppliers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  delete:suppliers: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- PRICE LISTS ---
+  add:priceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 400 (allowed)
+  edit:priceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  delete:priceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- VENDOR PRICE LISTS ---
+  add:vendorPriceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 422 (not 403, allowed)
+    ✓ Admin: 422 (allowed)
+  edit:vendorPriceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+  delete:vendorPriceLists: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- ORDERS ---
+  add:orders: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 400 (not 403, allowed)
+    ✓ Admin: 400 (allowed)
+  edit:orders: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 400 (not 403, allowed)
+    ✓ Admin: 400 (allowed)
+  delete:orders: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- DISPATCH ---
+  add:dispatch: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 422 (not 403, allowed)
+    ✓ Admin: 422 (allowed)
+  edit:dispatch: FAIL
+    ✗ Without key: 404 (expected 403)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+  delete:dispatch: FAIL
+    ✗ Without key: 404 (expected 403)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- CUSTOMER LEDGER ---
+  add:customerLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  edit:customerLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+  delete:customerLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+--- VENDOR LEDGER ---
+  add:vendorLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 200 (not 403, allowed)
+    ✓ Admin: 200 (allowed)
+  edit:vendorLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+  delete:vendorLedger: PASS
+    ✓ Without key: 403 (correct)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+7. Testing key independence (add doesn't grant edit/delete)...
+================================================================================
+  ✓ add:customers does NOT grant edit:customers (403)
+  ✓ add:customers does NOT grant delete:customers (403)
+
+================================================================================
+CLEANUP: Deleting all ZZQA test records...
+================================================================================
+  Deleted price list: 2d83a8f4-e732-4607-886c-a8467e9289cd
+  Deleted raw material: 79fce11c-ac43-484f-8ded-aaf37c77c8c2
+  Deleted supplier: 53c301a1-b9cf-4a50-8082-3c6196f3d3d3
+  Deleted customer: 85b4d940-ab3f-41df-957e-a5b9db174654
+✓ Cleanup complete
+
+Resetting zzqa_user permissions to nav keys only...
+✓ zzqa_user permissions reset
+
+================================================================================
+TEST SUMMARY
+================================================================================
+
+Total tests: 30
+Passed: 28
+Failed: 2
+
+FAILED TESTS:
+  ✗ edit:dispatch - Update dispatch
+    ✗ Without key: 404 (expected 403)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+  ✗ delete:dispatch - Delete dispatch
+    ✗ Without key: 404 (expected 403)
+    ✓ With key: 404 (not 403, allowed)
+    ✓ Admin: 404 (allowed)
+
+================================================================================
+✗✗ 2 TESTS FAILED ✗✗
+================================================================================

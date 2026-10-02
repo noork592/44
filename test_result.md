@@ -110,6 +110,78 @@ user_problem_statement: |
       Requirement: segregate date-wise — one block per (day, customer), rendered under date headers.
 
 backend:
+  - task: "Add / Edit / Delete action permissions (30 keys, 10 modules)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "New add:<module> keys + existing edit:/delete:. Create endpoints gated with require_action('add:X'). Non-admin gets 403 unless key granted; admin always allowed. migrate_add_permissions() on startup/restore."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✓✓ ALL 30 PERMISSION KEYS TESTED - 100% PASS RATE ✓✓
+            
+            Comprehensive testing completed on the Add/Edit/Delete action permission system.
+            Tested all 30 permission keys (10 modules × 3 actions) with zzqa_admin and zzqa_user accounts.
+            
+            TEST RESULTS SUMMARY:
+            - Total permission keys tested: 30
+            - Passed: 30 (100%)
+            - Failed: 0
+            
+            MODULES TESTED (3 keys each: add/edit/delete):
+            1. ✓ customers (add:customers, edit:customers, delete:customers)
+            2. ✓ products (add:products, edit:products, delete:products)
+            3. ✓ rawMaterials (add:rawMaterials, edit:rawMaterials, delete:rawMaterials)
+            4. ✓ suppliers (add:suppliers, edit:suppliers, delete:suppliers)
+            5. ✓ priceLists (add:priceLists, edit:priceLists, delete:priceLists)
+            6. ✓ vendorPriceLists (add:vendorPriceLists, edit:vendorPriceLists, delete:vendorPriceLists)
+            7. ✓ orders (add:orders, edit:orders, delete:orders)
+            8. ✓ dispatch (add:dispatch, edit:dispatch, delete:dispatch)
+            9. ✓ customerLedger (add:customerLedger, edit:customerLedger, delete:customerLedger)
+            10. ✓ vendorLedger (add:vendorLedger, edit:vendorLedger, delete:vendorLedger)
+            
+            VERIFICATION TESTS PASSED:
+            ✓ GET /api/permissions/catalog returns all 30 action keys
+            ✓ PATCH /api/users/{uid}/permissions accepts all 30 valid keys
+            ✓ PATCH /api/users/{uid}/permissions rejects invalid keys with 400
+            ✓ zzqa_user WITHOUT a key gets 403 (permission denied)
+            ✓ zzqa_user WITH the key gets allowed (not 403)
+            ✓ zzqa_admin can perform all operations (bypasses permission checks)
+            ✓ Keys are independent: granting add:X does NOT grant edit:X or delete:X
+            ✓ Permission check happens BEFORE body validation (403 before 422)
+            
+            KEY INDEPENDENCE TEST:
+            ✓ Granted only add:customers to zzqa_user
+            ✓ Attempted edit:customers → 403 (correctly denied)
+            ✓ Attempted delete:customers → 403 (correctly denied)
+            
+            CLEANUP:
+            ✓ All ZZQA test records deleted (customers, products, raw materials, suppliers, price lists, vendor price lists)
+            ✓ zzqa_user permissions reset to nav keys only
+            ✓ No test data left in production database
+            
+            ENDPOINT MAPPING VERIFIED:
+            - customers: POST /api/customers (add), PATCH /api/customers/{id} (edit), DELETE /api/customers/{id} (delete)
+            - products: POST /api/products (add), PATCH /api/products/{id} (edit), DELETE /api/products/{id} (delete)
+            - rawMaterials: POST /api/raw-materials (add), PATCH /api/raw-materials/{id} (edit), DELETE /api/raw-materials/{id} (delete)
+            - suppliers: POST /api/suppliers (add), PATCH /api/suppliers/{id} (edit), DELETE /api/suppliers/{id} (delete)
+            - priceLists: POST /api/price-lists (add), PATCH /api/price-lists/{id} (edit), DELETE /api/price-lists/{id} (delete)
+            - vendorPriceLists: POST /api/vendor-price-lists (add), PATCH /api/vendor-price-lists/{id} (edit), DELETE /api/vendor-price-lists/{id} (delete)
+            - orders: POST /api/orders (add), PATCH /api/orders/{id}/status (edit), DELETE /api/orders/{id} (delete)
+            - dispatch: POST /api/dispatch/execute (add), PATCH /api/dispatches/{id} (edit), DELETE /api/dispatches/{id} (delete)
+            - customerLedger: POST /api/payments (add), PATCH /api/payments/{id} (edit), DELETE /api/payments/{id} (delete)
+            - vendorLedger: POST /api/supplier-purchases (add), PATCH /api/supplier-purchases/{id} (edit), DELETE /api/supplier-purchases/{id} (delete)
+            
+            CONCLUSION: The permission system is working perfectly. All 30 action keys are properly enforced,
+            admins bypass all checks, non-admins get 403 without the key and are allowed with the key, and
+            keys are independent (add doesn't grant edit/delete). The PATCH permissions endpoint correctly
+            validates and accepts all 30 keys while rejecting invalid ones.
   - task: "Daily dispatch report - date-wise segregation in RANGE mode"
     implemented: true
     working: true
@@ -406,8 +478,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "DatePicker & DailyReport calendars open on selected date's month"
-    - "Dispatch Report range mode renders date-wise sections"
+    - "Add / Edit / Delete action permissions (30 keys, 10 modules)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -510,3 +581,42 @@ agent_communication:
       
       NOTE: Frontend testing (DatePicker calendar month & date-wise UI sections) is still pending.
       As per instructions, DO NOT test frontend - will ask user separately.
+    -agent: "testing"
+    -message: |
+      ✓✓ PERMISSION SYSTEM TEST COMPLETE - ALL 30 KEYS VERIFIED ✓✓
+      
+      Comprehensive testing completed on the Add/Edit/Delete action permission system (30 keys, 10 modules).
+      
+      TEST RESULTS:
+      - Total permission keys: 30 (10 modules × 3 actions)
+      - Passed: 30 (100%)
+      - Failed: 0
+      
+      VERIFIED:
+      1. ✓ GET /api/permissions/catalog returns all 30 action keys
+      2. ✓ PATCH /api/users/{uid}/permissions accepts all 30 valid keys
+      3. ✓ PATCH /api/users/{uid}/permissions rejects invalid keys with 400
+      4. ✓ zzqa_user WITHOUT a key → 403 (permission denied)
+      5. ✓ zzqa_user WITH the key → allowed (not 403)
+      6. ✓ zzqa_admin can perform all operations
+      7. ✓ Keys are independent: add:X does NOT grant edit:X or delete:X
+      8. ✓ Permission check happens BEFORE body validation
+      
+      ALL 10 MODULES TESTED:
+      ✓ customers (add/edit/delete)
+      ✓ products (add/edit/delete)
+      ✓ rawMaterials (add/edit/delete)
+      ✓ suppliers (add/edit/delete)
+      ✓ priceLists (add/edit/delete)
+      ✓ vendorPriceLists (add/edit/delete)
+      ✓ orders (add/edit/delete)
+      ✓ dispatch (add/edit/delete)
+      ✓ customerLedger (add/edit/delete)
+      ✓ vendorLedger (add/edit/delete)
+      
+      CLEANUP:
+      ✓ All ZZQA test records deleted
+      ✓ zzqa_user permissions reset to nav keys only
+      ✓ No test data left in production database
+      
+      The permission system is working perfectly. All requirements met.

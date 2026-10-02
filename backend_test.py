@@ -1,424 +1,845 @@
 #!/usr/bin/env python3
 """
-Backend test for Daily Dispatch Report endpoint with date-wise segregation.
-Tests both single-day and range modes.
+Comprehensive test for Add/Edit/Delete action permissions (30 keys, 10 modules).
+Tests that:
+1. zzqa_user WITHOUT a key gets 403
+2. zzqa_user WITH the key gets allowed (2xx or 4xx validation, NOT 403)
+3. Keys are independent (add doesn't grant edit/delete)
+4. zzqa_admin can do all operations
+5. PATCH permissions endpoint accepts all 30 keys and rejects invalid keys
+6. Cleans up all ZZQA test records at the end
 """
+
 import requests
 import json
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+import os
+from typing import Dict, List, Tuple, Optional
 
-# Backend URL from frontend/.env
-BASE_URL = "https://clone-fortytwo.preview.emergentagent.com/api"
+# Backend URL from environment
+BACKEND_URL = os.getenv("REACT_APP_BACKEND_URL", "https://atomic-email.preview.emergentagent.com")
+API_BASE = f"{BACKEND_URL}/api"
 
-# Test credentials - using 'user' account to avoid OTP
-# From DB: username='user', email='user@factory.com', otp_login=false
-TEST_USER = "user"
-TEST_PASSWORD = "user123"
+# Test accounts
+ZZQA_ADMIN = {"email": "zzqa_admin", "password": "QaTest@123"}
+ZZQA_USER = {"email": "zzqa_user", "password": "QaTest@123"}
+ZZQA_ADMIN_ID = "cdeda40f-2741-4690-80a3-11d543467fb7"
+ZZQA_USER_ID = "d166924d-8b22-40d7-9d47-d273a0beaa08"
 
-def login() -> str:
-    """Login and return Bearer token."""
-    print("\n=== LOGIN ===")
-    url = f"{BASE_URL}/auth/login"
-    payload = {"email": TEST_USER, "password": TEST_PASSWORD}  # 'email' field accepts username too
-    print(f"POST {url}")
-    print(f"Payload: {payload}")
-    
-    resp = requests.post(url, json=payload)
-    print(f"Status: {resp.status_code}")
-    
+# Nav keys that should always be included
+NAV_KEYS = [
+    "dashboard", "orders", "newOrder", "dispatch", "purchaseCenter", 
+    "dispatchLedger", "vendorLedger", "dailyReport", "customers", 
+    "products", "rawMaterials", "suppliers", "priceLists", "vendorPriceLists"
+]
+
+# All 30 action permission keys (10 modules × 3 actions)
+ALL_ACTION_KEYS = [
+    "add:customers", "edit:customers", "delete:customers",
+    "add:products", "edit:products", "delete:products",
+    "add:rawMaterials", "edit:rawMaterials", "delete:rawMaterials",
+    "add:suppliers", "edit:suppliers", "delete:suppliers",
+    "add:vendorLedger", "edit:vendorLedger", "delete:vendorLedger",
+    "add:customerLedger", "edit:customerLedger", "delete:customerLedger",
+    "add:orders", "edit:orders", "delete:orders",
+    "add:dispatch", "edit:dispatch", "delete:dispatch",
+    "add:priceLists", "edit:priceLists", "delete:priceLists",
+    "add:vendorPriceLists", "edit:vendorPriceLists", "delete:vendorPriceLists",
+]
+
+# Track created test records for cleanup
+created_records = {
+    "customers": [],
+    "products": [],
+    "items": [],
+    "rawMaterials": [],
+    "suppliers": [],
+    "priceLists": [],
+    "vendorPriceLists": [],
+    "orders": [],
+    "dispatches": [],
+    "payments": [],
+    "saleReturns": [],
+    "supplierPurchases": [],
+    "supplierPayments": [],
+    "purchaseReturns": [],
+}
+
+# Test results
+test_results = []
+
+
+def login(credentials: Dict[str, str]) -> str:
+    """Login and return JWT token"""
+    resp = requests.post(f"{API_BASE}/auth/login", json=credentials)
     if resp.status_code != 200:
-        print(f"ERROR: Login failed - {resp.text}")
-        raise Exception(f"Login failed: {resp.status_code} - {resp.text}")
-    
+        raise Exception(f"Login failed: {resp.status_code} {resp.text}")
     data = resp.json()
-    print(f"Response: {json.dumps(data, indent=2)}")
-    
-    if "otp_required" in data and data["otp_required"]:
-        raise Exception("OTP required - should not happen with 'user' account")
-    
-    token = data.get("token")
-    if not token:
-        raise Exception("No token in response")
-    
-    print(f"✓ Login successful, token obtained")
-    return token
+    return data["token"]
 
 
-def ist_date_from_utc(utc_str: str) -> str:
-    """Convert UTC ISO string to IST date (YYYY-MM-DD)."""
-    IST = timezone(timedelta(hours=5, minutes=30))
-    dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(IST).date().isoformat()
+def set_user_permissions(admin_token: str, user_id: str, permissions: List[str]) -> bool:
+    """Set user permissions using admin token"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.patch(
+        f"{API_BASE}/users/{user_id}/permissions",
+        json={"permissions": permissions},
+        headers=headers
+    )
+    return resp.status_code == 200
 
 
-def test_single_day_mode(token: str, test_date: str = "2026-07-28"):
-    """Test single-day mode: date only, no end_date."""
-    print(f"\n{'='*80}")
-    print(f"TEST 1: SINGLE DAY MODE (date={test_date})")
-    print(f"{'='*80}")
+def test_permission_key(
+    key: str,
+    endpoint: str,
+    method: str,
+    body: Optional[Dict] = None,
+    user_token: str = None,
+    admin_token: str = None,
+    test_name: str = "",
+    expect_403_without: bool = True,
+    expect_allowed_with: bool = True,
+    record_id: str = None,
+) -> Dict:
+    """
+    Test a single permission key.
+    Returns dict with test results.
+    """
+    result = {
+        "key": key,
+        "test_name": test_name,
+        "endpoint": endpoint,
+        "method": method,
+        "without_key_403": None,
+        "with_key_allowed": None,
+        "admin_allowed": None,
+        "pass": False,
+        "details": []
+    }
     
-    url = f"{BASE_URL}/reports/daily-dispatch"
-    params = {"date": test_date}
-    headers = {"Authorization": f"Bearer {token}"}
+    headers_user = {"Authorization": f"Bearer {user_token}"}
+    headers_admin = {"Authorization": f"Bearer {admin_token}"}
     
-    print(f"GET {url}")
-    print(f"Params: {params}")
+    # Replace {id} placeholder if record_id provided
+    test_endpoint = endpoint.replace("{id}", record_id) if record_id else endpoint
     
-    resp = requests.get(url, params=params, headers=headers)
-    print(f"Status: {resp.status_code}")
-    
-    if resp.status_code != 200:
-        print(f"ERROR: {resp.text}")
-        return False
-    
-    data = resp.json()
-    print(f"\nResponse structure:")
-    print(f"  - range_mode: {data.get('range_mode')}")
-    print(f"  - date: {data.get('date')}")
-    print(f"  - end_date: {data.get('end_date')}")
-    print(f"  - groups count: {len(data.get('groups', []))}")
-    print(f"  - grand_total_pcs: {data.get('grand_total_pcs')}")
-    print(f"  - grand_total_value: {data.get('grand_total_value')}")
-    print(f"  - dispatch_count: {data.get('dispatch_count')}")
-    
-    # Verify required fields
-    required_fields = ["range_mode", "groups", "grand_total_pcs", "grand_total_value", 
-                       "dispatch_count", "date", "end_date"]
-    missing = [f for f in required_fields if f not in data]
-    if missing:
-        print(f"\n✗ FAIL: Missing required fields: {missing}")
-        return False
-    
-    # Verify range_mode is False
-    if data["range_mode"] != False:
-        print(f"\n✗ FAIL: range_mode should be False, got {data['range_mode']}")
-        return False
-    
-    # Check groups structure
-    groups = data.get("groups", [])
-    if not groups:
-        print(f"\n⚠ WARNING: No groups found for date {test_date}")
-        print(f"  Skipping detailed validation (no data for this date)")
-        return True  # Not a failure, just no data
-    
-    print(f"\nGroups analysis:")
-    customer_ids_seen = set()
-    for i, group in enumerate(groups):
-        cid = group.get("customer_id")
-        cname = group.get("customer_name")
-        day = group.get("day")
-        dispatch_count = group.get("dispatch_count", 0)
-        total_pcs = group.get("total_pcs", 0)
+    # Test 1: zzqa_user WITHOUT the key → should get 403
+    if expect_403_without:
+        # Set permissions to NAV_KEYS only (no action keys)
+        set_user_permissions(admin_token, ZZQA_USER_ID, NAV_KEYS)
         
-        print(f"  Group {i+1}: customer_id={cid}, customer_name={cname}, day={day}, "
-              f"dispatches={dispatch_count}, pcs={total_pcs}")
+        if method == "POST":
+            resp = requests.post(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_user)
+        elif method == "PATCH" or method == "PUT":
+            resp = requests.patch(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_user)
+        elif method == "DELETE":
+            resp = requests.delete(f"{API_BASE}{test_endpoint}", headers=headers_user)
+        else:
+            resp = requests.get(f"{API_BASE}{test_endpoint}", headers=headers_user)
         
-        # Check for required group fields
-        if "day" not in group:
-            print(f"    ✗ FAIL: Group missing 'day' field")
-            return False
+        result["without_key_403"] = resp.status_code == 403
+        if resp.status_code == 403:
+            result["details"].append(f"✓ Without key: 403 (correct)")
+        else:
+            result["details"].append(f"✗ Without key: {resp.status_code} (expected 403)")
+            if resp.status_code == 422:
+                result["details"].append(f"  ERROR: Got 422 validation before permission check!")
+    
+    # Test 2: zzqa_user WITH the key → should be allowed (not 403)
+    if expect_allowed_with:
+        # Set permissions to NAV_KEYS + this specific key
+        set_user_permissions(admin_token, ZZQA_USER_ID, NAV_KEYS + [key])
         
-        if "customer_id" not in group:
-            print(f"    ✗ FAIL: Group missing 'customer_id' field")
-            return False
+        if method == "POST":
+            resp = requests.post(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_user)
+        elif method == "PATCH" or method == "PUT":
+            resp = requests.patch(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_user)
+        elif method == "DELETE":
+            resp = requests.delete(f"{API_BASE}{test_endpoint}", headers=headers_user)
+        else:
+            resp = requests.get(f"{API_BASE}{test_endpoint}", headers=headers_user)
         
-        # Check for duplicate customer_id (should not happen in single-day mode)
-        if cid in customer_ids_seen:
-            print(f"    ✗ FAIL: customer_id {cid} appears multiple times (should be unique in single-day mode)")
-            return False
-        customer_ids_seen.add(cid)
+        result["with_key_allowed"] = resp.status_code != 403
+        if resp.status_code != 403:
+            result["details"].append(f"✓ With key: {resp.status_code} (not 403, allowed)")
+        else:
+            result["details"].append(f"✗ With key: 403 (should be allowed)")
     
-    print(f"\n✓ PASS: Single-day mode working correctly")
-    print(f"  - range_mode = False ✓")
-    print(f"  - All groups have 'day' field ✓")
-    print(f"  - No duplicate customer_ids ✓")
-    print(f"  - {len(groups)} unique customers found")
-    
-    return True
-
-
-def test_range_mode(token: str, start_date: str = "2026-08-01", end_date: str = "2026-10-01"):
-    """Test range mode: date + end_date spanning multiple days."""
-    print(f"\n{'='*80}")
-    print(f"TEST 2: RANGE MODE (date={start_date}, end_date={end_date})")
-    print(f"{'='*80}")
-    
-    url = f"{BASE_URL}/reports/daily-dispatch"
-    params = {"date": start_date, "end_date": end_date}
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    print(f"GET {url}")
-    print(f"Params: {params}")
-    
-    resp = requests.get(url, params=params, headers=headers)
-    print(f"Status: {resp.status_code}")
-    
-    if resp.status_code != 200:
-        print(f"ERROR: {resp.text}")
-        return False
-    
-    data = resp.json()
-    print(f"\nResponse structure:")
-    print(f"  - range_mode: {data.get('range_mode')}")
-    print(f"  - date: {data.get('date')}")
-    print(f"  - end_date: {data.get('end_date')}")
-    print(f"  - groups count: {len(data.get('groups', []))}")
-    print(f"  - grand_total_pcs: {data.get('grand_total_pcs')}")
-    print(f"  - grand_total_value: {data.get('grand_total_value')}")
-    print(f"  - dispatch_count: {data.get('dispatch_count')}")
-    
-    # Verify range_mode is True
-    if data["range_mode"] != True:
-        print(f"\n✗ FAIL: range_mode should be True, got {data['range_mode']}")
-        return False
-    
-    groups = data.get("groups", [])
-    if not groups:
-        print(f"\n⚠ WARNING: No groups found for range {start_date} to {end_date}")
-        return False
-    
-    # Analyze groups for date-wise segregation
-    print(f"\n{'='*80}")
-    print(f"ANALYZING DATE-WISE SEGREGATION")
-    print(f"{'='*80}")
-    
-    # Track parties that appear on multiple days
-    party_days: Dict[str, List[str]] = {}  # customer_id -> [day1, day2, ...]
-    party_names: Dict[str, str] = {}  # customer_id -> customer_name
-    
-    # Verify each group's dispatches share the same IST day
-    all_valid = True
-    for i, group in enumerate(groups):
-        cid = group.get("customer_id")
-        cname = group.get("customer_name")
-        group_day = group.get("day")
-        dispatches = group.get("dispatches", [])
-        
-        if cid not in party_days:
-            party_days[cid] = []
-            party_names[cid] = cname
-        party_days[cid].append(group_day)
-        
-        # Verify all dispatches in this group share the same IST day
-        for j, dispatch in enumerate(dispatches):
-            dispatched_at = dispatch.get("dispatched_at")
-            if dispatched_at:
-                dispatch_ist_day = ist_date_from_utc(dispatched_at)
-                if dispatch_ist_day != group_day:
-                    print(f"\n✗ FAIL: Group {i+1} (customer={cname}, group_day={group_day})")
-                    print(f"  Dispatch {j+1} has dispatched_at={dispatched_at}")
-                    print(f"  Which converts to IST day={dispatch_ist_day}")
-                    print(f"  But group['day']={group_day} (MISMATCH!)")
-                    all_valid = False
-    
-    if not all_valid:
-        return False
-    
-    print(f"✓ All dispatches within each group share the same IST day as group['day']")
-    
-    # Find parties with dispatches on multiple days
-    multi_day_parties = {cid: days for cid, days in party_days.items() if len(days) > 1}
-    
-    print(f"\n{'='*80}")
-    print(f"PARTIES WITH MULTI-DAY DISPATCHES")
-    print(f"{'='*80}")
-    
-    if not multi_day_parties:
-        print(f"⚠ WARNING: No parties found with dispatches on multiple days")
-        print(f"  This might indicate the date range doesn't span enough activity")
-        print(f"  or the test data doesn't have multi-day dispatches.")
+    # Test 3: zzqa_admin can do it
+    if method == "POST":
+        resp = requests.post(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_admin)
+    elif method == "PATCH" or method == "PUT":
+        resp = requests.patch(f"{API_BASE}{test_endpoint}", json=body or {}, headers=headers_admin)
+    elif method == "DELETE":
+        resp = requests.delete(f"{API_BASE}{test_endpoint}", headers=headers_admin)
     else:
-        print(f"Found {len(multi_day_parties)} parties with dispatches on multiple days:\n")
-        for cid, days in multi_day_parties.items():
-            cname = party_names[cid]
-            print(f"  Party: {cname} (customer_id={cid})")
-            print(f"    Appears on {len(days)} different days: {sorted(set(days))}")
-            
-            # Show per-day breakdown for this party
-            for day in sorted(set(days)):
-                matching_groups = [g for g in groups if g.get("customer_id") == cid and g.get("day") == day]
-                for g in matching_groups:
-                    print(f"      {day}: {g.get('dispatch_count')} dispatches, "
-                          f"{g.get('total_pcs')} pcs, ₹{g.get('total_value')}")
-        
-        print(f"\n✓ PASS: Parties with multi-day dispatches appear as MULTIPLE groups (one per day)")
+        resp = requests.get(f"{API_BASE}{test_endpoint}", headers=headers_admin)
     
-    # Verify sorting: groups should be ordered by (day asc, customer_name)
-    print(f"\n{'='*80}")
-    print(f"VERIFYING SORT ORDER")
-    print(f"{'='*80}")
-    
-    prev_day = None
-    prev_name = None
-    sort_valid = True
-    
-    for i, group in enumerate(groups):
-        day = group.get("day")
-        name = group.get("customer_name", "").lower()
-        
-        if prev_day is not None:
-            if day < prev_day:
-                print(f"✗ FAIL: Group {i+1} has day={day} which is before previous day={prev_day}")
-                sort_valid = False
-            elif day == prev_day and prev_name is not None and name < prev_name:
-                print(f"✗ FAIL: Group {i+1} has name={name} which is before previous name={prev_name} on same day")
-                sort_valid = False
-        
-        prev_day = day
-        prev_name = name if day == prev_day else None
-    
-    if sort_valid:
-        print(f"✓ Groups are correctly sorted by (day ascending, customer_name)")
+    result["admin_allowed"] = resp.status_code != 403
+    if resp.status_code != 403:
+        result["details"].append(f"✓ Admin: {resp.status_code} (allowed)")
     else:
-        return False
+        result["details"].append(f"✗ Admin: 403 (should be allowed)")
     
-    return True
+    # Overall pass/fail
+    result["pass"] = (
+        (not expect_403_without or result["without_key_403"]) and
+        (not expect_allowed_with or result["with_key_allowed"]) and
+        result["admin_allowed"]
+    )
+    
+    return result
 
 
-def test_no_data_loss(token: str, start_date: str = "2026-08-01", end_date: str = "2026-10-01"):
-    """Test that no data is lost: sum of groups equals grand totals."""
-    print(f"\n{'='*80}")
-    print(f"TEST 3: NO DATA LOSS (sum of groups = grand totals)")
-    print(f"{'='*80}")
-    
-    url = f"{BASE_URL}/reports/daily-dispatch"
-    params = {"date": start_date, "end_date": end_date}
+def create_zzqa_customer(token: str) -> Optional[str]:
+    """Create a ZZQA test customer and return its ID"""
     headers = {"Authorization": f"Bearer {token}"}
-    
-    resp = requests.get(url, params=params, headers=headers)
-    if resp.status_code != 200:
-        print(f"ERROR: {resp.text}")
-        return False
-    
-    data = resp.json()
-    groups = data.get("groups", [])
-    
-    # Sum up all groups
-    sum_dispatch_count = sum(g.get("dispatch_count", 0) for g in groups)
-    sum_total_pcs = sum(g.get("total_pcs", 0) for g in groups)
-    sum_total_value = sum(g.get("total_value", 0.0) for g in groups)
-    
-    # Compare with grand totals
-    grand_dispatch_count = data.get("dispatch_count", 0)
-    grand_total_pcs = data.get("grand_total_pcs", 0)
-    grand_total_value = data.get("grand_total_value", 0.0)
-    
-    print(f"\nSum of all groups:")
-    print(f"  dispatch_count: {sum_dispatch_count}")
-    print(f"  total_pcs: {sum_total_pcs}")
-    print(f"  total_value: {sum_total_value:.2f}")
-    
-    print(f"\nGrand totals from response:")
-    print(f"  dispatch_count: {grand_dispatch_count}")
-    print(f"  grand_total_pcs: {grand_total_pcs}")
-    print(f"  grand_total_value: {grand_total_value:.2f}")
-    
-    # Verify dispatch_count
-    if sum_dispatch_count != grand_dispatch_count:
-        print(f"\n✗ FAIL: Sum of groups' dispatch_count ({sum_dispatch_count}) != "
-              f"grand dispatch_count ({grand_dispatch_count})")
-        return False
-    
-    # Verify total_pcs
-    if sum_total_pcs != grand_total_pcs:
-        print(f"\n✗ FAIL: Sum of groups' total_pcs ({sum_total_pcs}) != "
-              f"grand_total_pcs ({grand_total_pcs})")
-        return False
-    
-    # Verify total_value (allow small float rounding difference)
-    value_diff = abs(sum_total_value - grand_total_value)
-    if value_diff > 0.02:  # Allow 2 paisa difference for rounding
-        print(f"\n✗ FAIL: Sum of groups' total_value ({sum_total_value:.2f}) differs from "
-              f"grand_total_value ({grand_total_value:.2f}) by {value_diff:.2f}")
-        return False
-    
-    print(f"\n✓ PASS: No data loss detected")
-    print(f"  - dispatch_count matches ✓")
-    print(f"  - total_pcs matches ✓")
-    print(f"  - total_value matches (diff={value_diff:.4f}) ✓")
-    
-    return True
+    body = {
+        "name": "ZZQA Test Customer",
+        "phone": "9999999999",
+        "address": "ZZQA Test Address",
+        "city": "ZZQA City",
+        "state": "Punjab"
+    }
+    resp = requests.post(f"{API_BASE}/customers", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        cust = resp.json()
+        cid = cust.get("id")
+        if cid:
+            created_records["customers"].append(cid)
+            return cid
+    return None
 
 
-def test_edge_case_invalid_range(token: str):
-    """Test edge case: end_date earlier than date should return 400."""
-    print(f"\n{'='*80}")
-    print(f"TEST 4: EDGE CASE (end_date < date should return 400)")
-    print(f"{'='*80}")
-    
-    url = f"{BASE_URL}/reports/daily-dispatch"
-    params = {"date": "2026-09-30", "end_date": "2026-08-01"}  # end before start
+def create_zzqa_product(token: str) -> Optional[str]:
+    """Create a ZZQA test product and return its ID"""
     headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "ZZQA Test Product",
+        "category": "Test",
+        "unit": "pcs"
+    }
+    resp = requests.post(f"{API_BASE}/products", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        prod = resp.json()
+        pid = prod.get("id")
+        if pid:
+            created_records["products"].append(pid)
+            return pid
+    return None
+
+
+def create_zzqa_raw_material(token: str) -> Optional[str]:
+    """Create a ZZQA test raw material and return its ID"""
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "ZZQA Test Raw Material",
+        "unit": "kg"
+    }
+    resp = requests.post(f"{API_BASE}/raw-materials", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        rm = resp.json()
+        rid = rm.get("id")
+        if rid:
+            created_records["rawMaterials"].append(rid)
+            return rid
+    return None
+
+
+def create_zzqa_supplier(token: str) -> Optional[str]:
+    """Create a ZZQA test supplier and return its ID"""
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "ZZQA Test Supplier",
+        "phone": "9999999999",
+        "address": "ZZQA Supplier Address"
+    }
+    resp = requests.post(f"{API_BASE}/suppliers", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        sup = resp.json()
+        sid = sup.get("id")
+        if sid:
+            created_records["suppliers"].append(sid)
+            return sid
+    return None
+
+
+def create_zzqa_price_list(token: str) -> Optional[str]:
+    """Create a ZZQA test price list and return its ID"""
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "name": "ZZQA Test Price List",
+        "effective_date": "2026-01-01"
+    }
+    resp = requests.post(f"{API_BASE}/price-lists", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        pl = resp.json()
+        plid = pl.get("id")
+        if plid:
+            created_records["priceLists"].append(plid)
+            return plid
+    return None
+
+
+def create_zzqa_vendor_price_list(token: str, supplier_id: str) -> Optional[str]:
+    """Create a ZZQA test vendor price list and return its ID"""
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "supplier_id": supplier_id,
+        "name": "ZZQA Test Vendor Price List",
+        "effective_date": "2026-01-01"
+    }
+    resp = requests.post(f"{API_BASE}/vendor-price-lists", json=body, headers=headers)
+    if resp.status_code in [200, 201]:
+        vpl = resp.json()
+        vplid = vpl.get("id")
+        if vplid:
+            created_records["vendorPriceLists"].append(vplid)
+            return vplid
+    return None
+
+
+def cleanup_all_zzqa_records(admin_token: str):
+    """Delete all ZZQA test records created during testing"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    print("\n" + "="*80)
+    print("CLEANUP: Deleting all ZZQA test records...")
+    print("="*80)
     
-    print(f"GET {url}")
-    print(f"Params: {params}")
+    # Delete in reverse dependency order
+    for pid in created_records["payments"]:
+        requests.delete(f"{API_BASE}/payments/{pid}", headers=headers)
+        print(f"  Deleted payment: {pid}")
     
-    resp = requests.get(url, params=params, headers=headers)
-    print(f"Status: {resp.status_code}")
+    for srid in created_records["saleReturns"]:
+        requests.delete(f"{API_BASE}/sale-returns/{srid}", headers=headers)
+        print(f"  Deleted sale return: {srid}")
     
-    if resp.status_code != 400:
-        print(f"\n✗ FAIL: Expected 400, got {resp.status_code}")
-        print(f"Response: {resp.text}")
-        return False
+    for spid in created_records["supplierPayments"]:
+        requests.delete(f"{API_BASE}/supplier-payments/{spid}", headers=headers)
+        print(f"  Deleted supplier payment: {spid}")
     
-    print(f"Response: {resp.text}")
-    print(f"\n✓ PASS: Correctly returns 400 for invalid date range")
+    for prid in created_records["purchaseReturns"]:
+        requests.delete(f"{API_BASE}/purchase-returns/{prid}", headers=headers)
+        print(f"  Deleted purchase return: {prid}")
     
-    return True
+    for spid in created_records["supplierPurchases"]:
+        requests.delete(f"{API_BASE}/supplier-purchases/{spid}", headers=headers)
+        print(f"  Deleted supplier purchase: {spid}")
+    
+    for did in created_records["dispatches"]:
+        requests.delete(f"{API_BASE}/dispatches/{did}", headers=headers)
+        print(f"  Deleted dispatch: {did}")
+    
+    for oid in created_records["orders"]:
+        requests.delete(f"{API_BASE}/orders/{oid}", headers=headers)
+        print(f"  Deleted order: {oid}")
+    
+    for vplid in created_records["vendorPriceLists"]:
+        requests.delete(f"{API_BASE}/vendor-price-lists/{vplid}", headers=headers)
+        print(f"  Deleted vendor price list: {vplid}")
+    
+    for plid in created_records["priceLists"]:
+        requests.delete(f"{API_BASE}/price-lists/{plid}", headers=headers)
+        print(f"  Deleted price list: {plid}")
+    
+    for iid in created_records["items"]:
+        requests.delete(f"{API_BASE}/items/{iid}", headers=headers)
+        print(f"  Deleted item: {iid}")
+    
+    for pid in created_records["products"]:
+        requests.delete(f"{API_BASE}/products/{pid}", headers=headers)
+        print(f"  Deleted product: {pid}")
+    
+    for rid in created_records["rawMaterials"]:
+        requests.delete(f"{API_BASE}/raw-materials/{rid}", headers=headers)
+        print(f"  Deleted raw material: {rid}")
+    
+    for sid in created_records["suppliers"]:
+        requests.delete(f"{API_BASE}/suppliers/{sid}", headers=headers)
+        print(f"  Deleted supplier: {sid}")
+    
+    for cid in created_records["customers"]:
+        requests.delete(f"{API_BASE}/customers/{cid}", headers=headers)
+        print(f"  Deleted customer: {cid}")
+    
+    print("✓ Cleanup complete")
+    
+    # Reset zzqa_user permissions to just nav keys
+    print("\nResetting zzqa_user permissions to nav keys only...")
+    set_user_permissions(admin_token, ZZQA_USER_ID, NAV_KEYS)
+    print("✓ zzqa_user permissions reset")
 
 
 def main():
-    """Run all tests."""
     print("="*80)
-    print("DAILY DISPATCH REPORT - DATE-WISE SEGREGATION TEST")
+    print("PERMISSION SYSTEM TEST - 30 Action Keys (10 Modules × 3 Actions)")
     print("="*80)
-    print(f"Backend URL: {BASE_URL}")
-    print(f"Test User: {TEST_USER}")
     
-    try:
-        # Login
-        token = login()
-        
-        # Run tests
-        results = {
-            "Single Day Mode": test_single_day_mode(token),
-            "Range Mode": test_range_mode(token),
-            "No Data Loss": test_no_data_loss(token),
-            "Edge Case (Invalid Range)": test_edge_case_invalid_range(token),
-        }
-        
-        # Summary
-        print(f"\n{'='*80}")
-        print(f"TEST SUMMARY")
-        print(f"{'='*80}")
-        
-        for test_name, passed in results.items():
-            status = "✓ PASS" if passed else "✗ FAIL"
-            print(f"{status}: {test_name}")
-        
-        all_passed = all(results.values())
-        
-        print(f"\n{'='*80}")
-        if all_passed:
-            print(f"✓✓ ALL TESTS PASSED ✓✓")
+    # Login
+    print("\n1. Logging in...")
+    admin_token = login(ZZQA_ADMIN)
+    user_token = login(ZZQA_USER)
+    print(f"  ✓ zzqa_admin logged in")
+    print(f"  ✓ zzqa_user logged in")
+    
+    # Test permissions catalog endpoint
+    print("\n2. Testing GET /api/permissions/catalog...")
+    headers_admin = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.get(f"{API_BASE}/permissions/catalog", headers=headers_admin)
+    if resp.status_code == 200:
+        catalog = resp.json()
+        actions = catalog.get("actions", [])
+        print(f"  ✓ Catalog returned {len(actions)} action keys")
+        if len(actions) == 30:
+            print(f"  ✓ All 30 action keys present")
         else:
-            print(f"✗✗ SOME TESTS FAILED ✗✗")
-        print(f"{'='*80}")
-        
-        return 0 if all_passed else 1
-        
-    except Exception as e:
-        print(f"\n{'='*80}")
-        print(f"✗✗ TEST EXECUTION FAILED ✗✗")
-        print(f"{'='*80}")
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
+            print(f"  ✗ Expected 30 action keys, got {len(actions)}")
+    else:
+        print(f"  ✗ Failed: {resp.status_code}")
+    
+    # Test PATCH permissions endpoint with valid keys
+    print("\n3. Testing PATCH /api/users/{uid}/permissions with all 30 keys...")
+    all_perms = NAV_KEYS + ALL_ACTION_KEYS
+    resp = requests.patch(
+        f"{API_BASE}/users/{ZZQA_USER_ID}/permissions",
+        json={"permissions": all_perms},
+        headers=headers_admin
+    )
+    if resp.status_code == 200:
+        print(f"  ✓ Accepted all 30 action keys + nav keys")
+    else:
+        print(f"  ✗ Failed: {resp.status_code} {resp.text}")
+    
+    # Test PATCH permissions endpoint with invalid key
+    print("\n4. Testing PATCH /api/users/{uid}/permissions with invalid key...")
+    invalid_perms = NAV_KEYS + ["invalid:key"]
+    resp = requests.patch(
+        f"{API_BASE}/users/{ZZQA_USER_ID}/permissions",
+        json={"permissions": invalid_perms},
+        headers=headers_admin
+    )
+    if resp.status_code == 400:
+        print(f"  ✓ Correctly rejected invalid key with 400")
+    else:
+        print(f"  ✗ Expected 400, got {resp.status_code}")
+    
+    # Create test records for edit/delete operations
+    print("\n5. Creating test records for edit/delete operations...")
+    cust_id = create_zzqa_customer(admin_token)
+    prod_id = create_zzqa_product(admin_token)
+    rm_id = create_zzqa_raw_material(admin_token)
+    supp_id = create_zzqa_supplier(admin_token)
+    pl_id = create_zzqa_price_list(admin_token)
+    vpl_id = create_zzqa_vendor_price_list(admin_token, supp_id) if supp_id else None
+    
+    print(f"  ✓ Created customer: {cust_id}")
+    print(f"  ✓ Created product: {prod_id}")
+    print(f"  ✓ Created raw material: {rm_id}")
+    print(f"  ✓ Created supplier: {supp_id}")
+    print(f"  ✓ Created price list: {pl_id}")
+    print(f"  ✓ Created vendor price list: {vpl_id}")
+    
+    # Test all 30 permission keys
+    print("\n6. Testing all 30 permission keys...")
+    print("="*80)
+    
+    # CUSTOMERS (3 keys)
+    print("\n--- CUSTOMERS ---")
+    result = test_permission_key(
+        "add:customers", "/customers", "POST",
+        body={"name": "ZZQA Test", "phone": "9999999999", "address": "Test", "city": "Test", "state": "Test"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create customer"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:customers", f"/customers/{cust_id}", "PATCH",
+        body={"name": "ZZQA Updated"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update customer", record_id=cust_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # For delete, we'll test with a non-existent ID to avoid actually deleting
+    result = test_permission_key(
+        "delete:customers", "/customers/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete customer"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # PRODUCTS (3 keys)
+    print("\n--- PRODUCTS ---")
+    result = test_permission_key(
+        "add:products", "/products", "POST",
+        body={"name": "ZZQA Product", "category": "Test", "unit": "pcs"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create product"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:products", f"/products/{prod_id}", "PATCH",
+        body={"name": "ZZQA Updated Product"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update product", record_id=prod_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:products", "/products/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete product"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # RAW MATERIALS (3 keys)
+    print("\n--- RAW MATERIALS ---")
+    result = test_permission_key(
+        "add:rawMaterials", "/raw-materials", "POST",
+        body={"name": "ZZQA Raw Material", "unit": "kg"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create raw material"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:rawMaterials", f"/raw-materials/{rm_id}", "PATCH",
+        body={"name": "ZZQA Updated RM"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update raw material", record_id=rm_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:rawMaterials", "/raw-materials/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete raw material"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # SUPPLIERS (3 keys)
+    print("\n--- SUPPLIERS ---")
+    result = test_permission_key(
+        "add:suppliers", "/suppliers", "POST",
+        body={"name": "ZZQA Supplier", "phone": "9999999999", "address": "Test"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create supplier"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:suppliers", f"/suppliers/{supp_id}", "PATCH",
+        body={"name": "ZZQA Updated Supplier"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update supplier", record_id=supp_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:suppliers", "/suppliers/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete supplier"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # PRICE LISTS (3 keys)
+    print("\n--- PRICE LISTS ---")
+    result = test_permission_key(
+        "add:priceLists", "/price-lists", "POST",
+        body={"name": "ZZQA Price List", "effective_date": "2026-01-01"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create price list"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:priceLists", f"/price-lists/{pl_id}", "PATCH",
+        body={"name": "ZZQA Updated PL"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update price list", record_id=pl_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:priceLists", "/price-lists/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete price list"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # VENDOR PRICE LISTS (3 keys)
+    print("\n--- VENDOR PRICE LISTS ---")
+    result = test_permission_key(
+        "add:vendorPriceLists", "/vendor-price-lists", "POST",
+        body={"supplier_id": supp_id, "name": "ZZQA VPL", "effective_date": "2026-01-01"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create vendor price list"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:vendorPriceLists", f"/vendor-price-lists/{vpl_id}", "PATCH",
+        body={"name": "ZZQA Updated VPL"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update vendor price list", record_id=vpl_id
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:vendorPriceLists", "/vendor-price-lists/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete vendor price list"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # ORDERS (3 keys)
+    print("\n--- ORDERS ---")
+    result = test_permission_key(
+        "add:orders", "/orders", "POST",
+        body={"customer_id": cust_id, "items": []},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create order"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:orders", "/orders/nonexistent-id/status", "PATCH",
+        body={"status": "confirmed"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update order status"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:orders", "/orders/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete order"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # DISPATCH (3 keys)
+    print("\n--- DISPATCH ---")
+    result = test_permission_key(
+        "add:dispatch", "/dispatch/execute", "POST",
+        body={"order_id": "nonexistent", "items": []},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create dispatch"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:dispatch", "/dispatches/nonexistent-id", "PATCH",
+        body={"notes": "Updated"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update dispatch"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:dispatch", "/dispatches/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete dispatch"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # CUSTOMER LEDGER (3 keys)
+    print("\n--- CUSTOMER LEDGER ---")
+    result = test_permission_key(
+        "add:customerLedger", "/payments", "POST",
+        body={"customer_id": cust_id, "amount": 100, "payment_date": "2026-01-01"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create payment"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:customerLedger", "/payments/nonexistent-id", "PATCH",
+        body={"amount": 200},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update payment"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:customerLedger", "/payments/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete payment"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # VENDOR LEDGER (3 keys)
+    print("\n--- VENDOR LEDGER ---")
+    result = test_permission_key(
+        "add:vendorLedger", "/supplier-purchases", "POST",
+        body={"supplier_id": supp_id, "items": [], "purchase_date": "2026-01-01"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Create supplier purchase"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "edit:vendorLedger", "/supplier-purchases/nonexistent-id", "PATCH",
+        body={"notes": "Updated"},
+        user_token=user_token, admin_token=admin_token,
+        test_name="Update supplier purchase"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    result = test_permission_key(
+        "delete:vendorLedger", "/supplier-purchases/nonexistent-id", "DELETE",
+        user_token=user_token, admin_token=admin_token,
+        test_name="Delete supplier purchase"
+    )
+    test_results.append(result)
+    print(f"  {result['key']}: {'PASS' if result['pass'] else 'FAIL'}")
+    for detail in result['details']:
+        print(f"    {detail}")
+    
+    # Test key independence
+    print("\n7. Testing key independence (add doesn't grant edit/delete)...")
+    print("="*80)
+    
+    # Grant only add:customers
+    set_user_permissions(admin_token, ZZQA_USER_ID, NAV_KEYS + ["add:customers"])
+    headers_user = {"Authorization": f"Bearer {user_token}"}
+    
+    # Try to edit (should fail with 403)
+    resp = requests.patch(
+        f"{API_BASE}/customers/{cust_id}",
+        json={"name": "Should Fail"},
+        headers=headers_user
+    )
+    if resp.status_code == 403:
+        print("  ✓ add:customers does NOT grant edit:customers (403)")
+    else:
+        print(f"  ✗ add:customers should NOT grant edit:customers (got {resp.status_code})")
+    
+    # Try to delete (should fail with 403)
+    resp = requests.delete(f"{API_BASE}/customers/nonexistent-id", headers=headers_user)
+    if resp.status_code == 403:
+        print("  ✓ add:customers does NOT grant delete:customers (403)")
+    else:
+        print(f"  ✗ add:customers should NOT grant delete:customers (got {resp.status_code})")
+    
+    # Cleanup
+    cleanup_all_zzqa_records(admin_token)
+    
+    # Summary
+    print("\n" + "="*80)
+    print("TEST SUMMARY")
+    print("="*80)
+    
+    passed = sum(1 for r in test_results if r["pass"])
+    failed = sum(1 for r in test_results if not r["pass"])
+    
+    print(f"\nTotal tests: {len(test_results)}")
+    print(f"Passed: {passed}")
+    print(f"Failed: {failed}")
+    
+    if failed > 0:
+        print("\nFAILED TESTS:")
+        for r in test_results:
+            if not r["pass"]:
+                print(f"  ✗ {r['key']} - {r['test_name']}")
+                for detail in r['details']:
+                    print(f"    {detail}")
+    
+    print("\n" + "="*80)
+    if failed == 0:
+        print("✓✓ ALL TESTS PASSED ✓✓")
+    else:
+        print(f"✗✗ {failed} TESTS FAILED ✗✗")
+    print("="*80)
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()
