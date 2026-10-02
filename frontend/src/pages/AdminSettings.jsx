@@ -11,7 +11,7 @@ import BackupRestore from "@/components/BackupRestore";
 
 // Software release version — surfaced in Admin Settings so operators can
 // quickly confirm which build they are running when reporting issues.
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 
 export default function AdminSettings() {
   const { t } = useTranslation();
